@@ -79,9 +79,9 @@ set KAGGLE_API=&lt;your_kaggle_key&gt;</code></pre>
 <pre><code>python drowsiness_detector/main.py --setup --download_datasets</code></pre>
       </li>
       <li><strong>Preprocess & train model</strong>
-<pre><code>python drowsiness_detector/main.py --train_model Data/drowsiness-prediction-dataset --preprocess_data --epochs 5</code></pre>
+<pre><code>python drowsiness_detector/main.py --train_model "Data/drowsiness-prediction-dataset/0 FaceImages" --preprocess_data --epochs 5</code></pre>
         <p>If already preprocessed:</p>
-<pre><code>python drowsiness_detector/main.py --train_model Data/drowsiness-prediction-dataset --epochs 5</code></pre>
+<pre><code>python drowsiness_detector/main.py --train_model Data/landmarks --epochs 5</code></pre>
       </li>
       <li><strong>Launch the Streamlit app</strong>
 <pre><code>streamlit run drowsiness_detector/app.py</code></pre>
