@@ -34,6 +34,11 @@ def main():
         ]
     )
     
+    logging.getLogger('PIL').setLevel(logging.WARNING)
+    logging.getLogger('PIL.PngImagePlugin').setLevel(logging.WARNING)
+    logging.getLogger('PIL.JpegImagePlugin').setLevel(logging.WARNING)
+    logging.getLogger('exifread').setLevel(logging.WARNING)
+    
     args = get_args()
 
     logging.basicConfig(
@@ -57,19 +62,16 @@ def main():
         download_datasets(datasets)
 
     if args.train_model:
-        setup_dirs(categories)
-
         logging.info("Preparing training data")
-        if args.preprocess_data:
-            processed = process_dataset(args.train_model, categories)
-        else:
-            processed = load_landmarks(categories)
-
-        train_gen, test_gen = setup_training_data(processed)
-
+        setup_dirs(categories)
+        train_gen, val_gen = setup_training_data(
+            data=args.train_model,
+            img_size=(145,145),
+            batch_size=32,
+            validation_split=0.2
+        )
         model = load_saved_model()
-        train_model(model, train_gen, test_gen, epochs=args.epochs)
-        evaluate_model(model, test_gen)
+        history = train_model(model, train_gen, val_gen, epochs=args.epochs)
 
 if __name__ == '__main__':
     main()

@@ -5,9 +5,13 @@ import logging
 import subprocess
 import cv2
 import numpy as np
-from tensorflow.keras.models import Sequential, load_model
+import tensorflow as tf
+tf.config.run_functions_eagerly(True)
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.models import load_model
 from tensorflow.keras.layers import (Dense, Flatten, Conv2D, MaxPooling2D, Dropout, BatchNormalization)
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
+import matplotlib.pyplot as plt
 
 def _lazy_mp():
     import sys, os
@@ -53,7 +57,8 @@ def build_drowsiness_model():
     model.compile(
         optimizer='adam',
         loss='binary_crossentropy',
-        metrics=['accuracy']
+        metrics=['accuracy'],
+        run_eagerly=True
     )
     return model
 
@@ -175,22 +180,35 @@ def load_landmarks(categories):
             data.append([cv2.resize(img, (IMG_SIZE, IMG_SIZE)), categories.index(category)])
     return data
 
-def setup_training_data(data, test_size=0.2):
-    X, y = zip(*data)
-    X = np.array(X, dtype='float32') / 255.0
-    y = LabelBinarizer().fit_transform(y)
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=test_size, random_state=42
-    )
-    train_aug = ImageDataGenerator(
+def setup_training_data(data,img_size=(145,145),batch_size=32,validation_split=0.2):
+    train_datagen = ImageDataGenerator(
+        rescale=1./255,
         zoom_range=0.2,
+        rotation_range=30,
         horizontal_flip=True,
-        rotation_range=30
+        validation_split=validation_split
     )
-    test_aug = ImageDataGenerator()
-    train_gen = train_aug.flow(X_train, y_train, batch_size=32)
-    test_gen  = test_aug.flow(X_test, y_test, batch_size=32)
-    return train_gen, test_gen
+    val_datagen = ImageDataGenerator(
+        rescale=1./255,
+        validation_split=validation_split
+    )
+    train_gen = train_datagen.flow_from_directory(
+        data,
+        target_size=img_size,
+        batch_size=batch_size,
+        class_mode='binary',
+        subset='training',
+        shuffle=True
+    )
+    val_gen = val_datagen.flow_from_directory(
+        data,
+        target_size=img_size,
+        batch_size=batch_size,
+        class_mode='binary',
+        subset='validation',
+        shuffle=False
+    )
+    return train_gen, val_gen
 
 
 def load_saved_model(load_last=True):
@@ -201,9 +219,15 @@ def load_saved_model(load_last=True):
             latest = h5_files[-1]
             model_path = os.path.join(model_dir, latest)
             print("Model path:", model_path)
-            # This restores both architecture + weights in one step
-            return load_model(model_path)
-
+            # load only architecture + weights, skip optimizer
+            model = load_model(model_path, compile=False)
+            model.compile(
+                optimizer='adam',
+                loss='binary_crossentropy',
+                metrics=['accuracy'],
+                run_eagerly=True
+            )
+            return model
     return build_drowsiness_model()
 
 def train_model(model, train_gen, test_gen, epochs=5):
@@ -212,10 +236,36 @@ def train_model(model, train_gen, test_gen, epochs=5):
         validation_data=test_gen,
         epochs=epochs
     )
+    
     timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
     out_path = os.path.join('Models', f'model_{timestamp}.h5')
     model.save(out_path)
     logging.info(f"Model saved to {out_path}")
+    
+    plt.figure(figsize=(12, 4))
+
+    plt.subplot(1, 2, 1)
+    plt.plot(history.history['accuracy'], label='Train Accuracy')
+    plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
+    plt.title('Model Accuracy')
+    plt.xlabel('Epoch')
+    plt.ylabel('Accuracy')
+    plt.legend()
+    plt.grid(True)
+
+    plt.subplot(1, 2, 2)
+    plt.plot(history.history['loss'], label='Train Loss')
+    plt.plot(history.history['val_loss'], label='Validation Loss')
+    plt.title('Model Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.grid(True)
+
+    plt.tight_layout()
+    plt.savefig("training_plot.png")
+    plt.show()
+
     return history
 
 def evaluate_model(model, test_gen):
@@ -223,7 +273,6 @@ def evaluate_model(model, test_gen):
     logging.info(f"Evaluation -> Loss: {loss:.4f}, Accuracy: {acc:.4f}")
     return loss, acc
 
-# Predict on a single image
 def predict(model, image):
     proc = process_image(image, '', 'live', save_img=False)
     if proc is None:
